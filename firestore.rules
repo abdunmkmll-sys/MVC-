@@ -1,0 +1,16 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /comments/{commentId} {
+      // القراءة مسموحة للجميع
+      allow read: if true;
+      
+      // الإنشاء مسموح فقط للمسجلين
+      allow create: if request.auth != null;
+      
+      // التعديل والحذف فقط لصاحب التعليق (بناءً على userId)
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}

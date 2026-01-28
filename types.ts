@@ -2,11 +2,13 @@
 export type EntryCategory = 'slip' | 'joke';
 
 export interface SlipEntry {
-  id: string;
-  name: string;
-  content: string;
+  id: string; // الوثيقة في Firestore
+  userId: string; // UID من Firebase Auth
+  userName: string;
+  content: string; // نص التعليق/الكلجة
   category: EntryCategory;
-  timestamp: number;
+  timestamp: any; // Firebase Timestamp
+  postId: string; // معرف الصفحة أو التصنيف
   aiAnalysis?: string;
   isAnalyzing?: boolean;
 }

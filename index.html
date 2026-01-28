@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>دفتر الكلجات</title>
+    <title>أرشيف الكلجات</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,18 +12,23 @@
     <style>
         body {
             font-family: 'Cairo', sans-serif;
-            background-color: #fdf6e3;
+            background-color: #fcfcfd;
+            overflow-x: hidden;
         }
         .paper-texture {
-            background-image: radial-gradient(#d1d1d1 1px, transparent 0);
+            background-image: radial-gradient(#cbd5e1 0.5px, transparent 0);
             background-size: 20px 20px;
+            background-attachment: fixed;
+        }
+        /* تحسين الأداء عبر تقليل التعقيد البصري */
+        .no-blur {
+            backdrop-filter: none !important;
+            background: rgba(15, 23, 42, 0.9) !important;
         }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
     "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",

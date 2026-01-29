@@ -12,6 +12,4 @@ if (rootElement) {
       <App />
     </React.StrictMode>
   );
-} else {
-  console.error("لم يتم العثور على عنصر root في الصفحة.");
 }

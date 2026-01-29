@@ -1,7 +1,7 @@
 
-import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
-  initializeFirestore,
+  getFirestore, 
   collection, 
   addDoc, 
   query, 
@@ -9,52 +9,41 @@ import {
   onSnapshot, 
   deleteDoc, 
   doc, 
-  serverTimestamp,
-  Firestore
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  serverTimestamp 
+} from "firebase/firestore";
 import { 
   getAuth, 
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut,
-  browserLocalPersistence,
   setPersistence,
-  Auth
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  browserLocalPersistence
+} from "firebase/auth";
 
-// الحصول على المتغيرات بأمان
-const env = typeof process !== 'undefined' ? process.env : (window as any).process?.env || {};
-
-const firebaseConfig = {
-  apiKey: env.FIREBASE_API_KEY,
-  authDomain: env.FIREBASE_AUTH_DOMAIN,
-  projectId: env.FIREBASE_PROJECT_ID,
-  storageBucket: env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: env.FIREBASE_SENDER_ID,
-  appId: env.FIREBASE_APP_ID
+const getEnv = (key: string) => {
+  return (import.meta as any).env?.[`VITE_${key}`] || (process as any).env?.[key] || "";
 };
 
-// التحقق مما إذا كانت جميع الإعدادات المطلوبة موجودة
-export const isFirebaseConfigured = !!(
-  firebaseConfig.apiKey && 
-  firebaseConfig.projectId && 
-  firebaseConfig.authDomain
-);
+const firebaseConfig = {
+  apiKey: getEnv('FIREBASE_API_KEY'),
+  authDomain: getEnv('FIREBASE_AUTH_DOMAIN'),
+  projectId: getEnv('FIREBASE_PROJECT_ID'),
+  storageBucket: getEnv('FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: getEnv('FIREBASE_SENDER_ID'),
+  appId: getEnv('FIREBASE_APP_ID')
+};
 
-let app;
+export const isFirebaseConfigured = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+
 let db: any = null;
 let auth: any = null;
 
 if (isFirebaseConfigured) {
   try {
-    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-    db = initializeFirestore(app, {
-      experimentalForceLongPolling: true,
-    });
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    db = getFirestore(app);
     auth = getAuth(app);
-    if (typeof window !== 'undefined') {
-      setPersistence(auth, browserLocalPersistence);
-    }
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
   } catch (error) {
     console.error("Firebase initialization failed:", error);
   }
@@ -64,48 +53,62 @@ export { db, auth };
 
 const googleProvider = new GoogleAuthProvider();
 
+// محاكاة البيانات محلياً في حال غياب Firebase
+const LOCAL_STORAGE_KEY = 'kalja_entries_backup';
+
 export const loginWithGoogle = async () => {
-  if (!isFirebaseConfigured || !auth) throw new Error("Firebase not configured");
-  try {
+  if (isFirebaseConfigured && auth) {
     return await signInWithPopup(auth, googleProvider);
-  } catch (error: any) {
-    console.error("Auth Error:", error.code);
-    throw error;
   }
+  // تسجيل دخول وهمي لوضع التجربة
+  return { user: { uid: 'guest', displayName: 'ضيف محلي', photoURL: null, email: 'guest@local' } };
 };
 
-export const logout = () => isFirebaseConfigured && auth && signOut(auth);
+export const logout = () => auth && isFirebaseConfigured && signOut(auth);
 
 export const addEntry = async (entry: any) => {
-  if (!isFirebaseConfigured || !db) return;
-  const entriesRef = collection(db, "comments");
-  const documentData = {
-    ...entry,
-    createdAt: serverTimestamp(),
-    timestamp: Date.now()
-  };
-  return await addDoc(entriesRef, documentData);
+  if (isFirebaseConfigured && db) {
+    return await addDoc(collection(db, "comments"), {
+      ...entry,
+      createdAt: serverTimestamp(),
+      timestamp: Date.now()
+    });
+  } else {
+    // حفظ محلي
+    const current = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
+    const newEntry = { ...entry, id: Math.random().toString(36).substr(2, 9), timestamp: Date.now() };
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([newEntry, ...current]));
+    return newEntry;
+  }
 };
 
 export const deleteEntry = async (id: string) => {
-  if (!isFirebaseConfigured || !db) return;
-  return await deleteDoc(doc(db, "comments", id));
+  if (isFirebaseConfigured && db) {
+    return await deleteDoc(doc(db, "comments", id));
+  } else {
+    const current = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
+    const filtered = current.filter((e: any) => e.id !== id);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
+  }
 };
 
 export const subscribeToEntries = (callback: (entries: any[]) => void) => {
-  if (!isFirebaseConfigured || !db) {
-    callback([]);
-    return () => {};
+  if (isFirebaseConfigured && db) {
+    const q = query(collection(db, "comments"), orderBy('timestamp', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+  } else {
+    // محاكاة البث المباشر للمحلي
+    const sync = () => {
+      callback(JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]'));
+    };
+    sync();
+    window.addEventListener('storage', sync);
+    const interval = setInterval(sync, 1000);
+    return () => {
+      window.removeEventListener('storage', sync);
+      clearInterval(interval);
+    };
   }
-  const entriesRef = collection(db, "comments");
-  const q = query(entriesRef, orderBy('timestamp', 'desc'));
-  return onSnapshot(q, (snapshot) => {
-    const fetchedEntries = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    callback(fetchedEntries);
-  }, (error) => {
-    console.warn("Firestore status:", error.message);
-  });
 };

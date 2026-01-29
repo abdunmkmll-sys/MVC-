@@ -15,7 +15,7 @@ import EntryCard from './components/EntryCard';
 import SlipStats from './components/SlipStats';
 import { 
   Notebook, Search, LayoutGrid, 
-  LogOut, Sparkles, Send, User as UserIcon, AlertTriangle, Settings
+  LogOut, Sparkles, Send, User as UserIcon, AlertTriangle, CloudOff, UserPlus
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -29,24 +29,28 @@ const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured) {
+    let unsubAuth = () => {};
+    
+    if (isFirebaseConfigured && auth) {
+      unsubAuth = auth.onAuthStateChanged((u: any) => {
+        if (u) {
+          setUser({
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName,
+            photoURL: u.photoURL
+          });
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+    } else {
+      // تحقق من وجود جلسة ضيف سابقة في المتصفح
+      const savedGuest = localStorage.getItem('kalja_guest_user');
+      if (savedGuest) setUser(JSON.parse(savedGuest));
       setLoading(false);
-      return;
     }
-
-    const unsubAuth = auth.onAuthStateChanged((u) => {
-      if (u) {
-        setUser({
-          uid: u.uid,
-          email: u.email,
-          displayName: u.displayName,
-          photoURL: u.photoURL
-        });
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
     
     const unsubEntries = subscribeToEntries((data) => {
       setEntries(data as SlipEntry[]);
@@ -60,9 +64,24 @@ const App: React.FC = () => {
 
   const handleLogin = async () => {
     try {
-      await loginWithGoogle();
+      const result = await loginWithGoogle();
+      if (!isFirebaseConfigured) {
+        // في وضع التجربة، نحفظ بيانات الضيف محلياً
+        const guestUser = (result as any).user;
+        setUser(guestUser);
+        localStorage.setItem('kalja_guest_user', JSON.stringify(guestUser));
+      }
     } catch (e) {
-      alert("خطأ في تسجيل الدخول. تأكد من إعدادات الـ Authorized Domains في Firebase.");
+      alert("خطأ في تسجيل الدخول. تم تفعيل وضع التجربة تلقائياً.");
+    }
+  };
+
+  const handleLogout = () => {
+    if (isFirebaseConfigured) {
+      logout();
+    } else {
+      setUser(null);
+      localStorage.removeItem('kalja_guest_user');
     }
   };
 
@@ -89,7 +108,7 @@ const App: React.FC = () => {
       setContent('');
     } catch (err) {
       console.error("Submit error:", err);
-      alert("تعذر الحفظ. تحقق من اتصالك بالإنترنت.");
+      alert("حدث خطأ أثناء الحفظ.");
     } finally {
       setIsSubmitting(false);
     }
@@ -117,40 +136,10 @@ const App: React.FC = () => {
       .slice(0, 5);
   }, [entries]);
 
-  if (!isFirebaseConfigured && !loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-red-100 p-8 text-center">
-          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <AlertTriangle className="w-8 h-8 text-red-500" />
-          </div>
-          <h2 className="text-2xl font-black text-slate-900 mb-4">نقص في الإعدادات!</h2>
-          <p className="text-slate-500 mb-6 text-sm leading-relaxed">
-            لم يتم العثور على متغيرات البيئة (Environment Variables) الخاصة بـ Firebase. 
-            يرجى إضافتها في لوحة تحكم <b>Vercel</b> لكي يعمل الموقع بشكل صحيح.
-          </p>
-          <div className="bg-slate-50 p-4 rounded-xl text-right text-[11px] font-mono text-slate-400 space-y-1">
-            <p>FIREBASE_API_KEY</p>
-            <p>FIREBASE_PROJECT_ID</p>
-            <p>FIREBASE_AUTH_DOMAIN</p>
-          </div>
-          <a 
-            href="https://vercel.com/dashboard" 
-            target="_blank" 
-            className="mt-8 w-full py-3 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
-          >
-            <Settings className="w-4 h-4" />
-            انتقل إلى Vercel
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
       <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-4 font-bold text-slate-400 text-sm">جاري التحقق من الأرشيف...</p>
+      <p className="mt-4 font-bold text-slate-400 text-sm">جاري فتح الأرشيف...</p>
     </div>
   );
 
@@ -161,20 +150,36 @@ const App: React.FC = () => {
           <Notebook className="w-10 h-10 text-white" />
         </div>
         <h1 className="text-3xl font-black text-slate-900 mb-2">أرشيف الكلجات</h1>
-        <p className="text-slate-500 mb-8 font-medium">وثق زلات أصدقائك بذكاء. الأرشيف الذي لا ينسى الحقيقة!</p>
-        <button 
-          onClick={handleLogin}
-          className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-100 hover:border-teal-500 p-4 rounded-2xl transition-all duration-300 font-bold text-slate-700 shadow-sm hover:shadow-md active:scale-95"
-        >
-          <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-          الدخول باستخدام جوجل
-        </button>
+        <p className="text-slate-500 mb-8 font-medium italic">"الكلمة التي تخرج لا تعود.. لكنها تُسجل هنا!"</p>
+        
+        <div className="space-y-3">
+          <button 
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-3 bg-slate-900 text-white p-4 rounded-2xl transition-all duration-300 font-bold shadow-lg hover:bg-slate-800 active:scale-95"
+          >
+            <UserPlus className="w-5 h-5" />
+            ابدأ كضيف (وضع التجربة)
+          </button>
+          
+          {!isFirebaseConfigured && (
+            <p className="text-[10px] text-amber-600 font-bold bg-amber-50 p-3 rounded-xl border border-amber-100">
+              ملاحظة: وضع التجربة يحفظ البيانات في جهازك فقط ولا يشاركها سحابياً.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
 
   return (
     <div className="min-h-screen paper-texture pb-20">
+      {!isFirebaseConfigured && (
+        <div className="bg-amber-500 text-white text-[10px] font-black py-1.5 px-4 text-center flex items-center justify-center gap-2">
+          <CloudOff className="w-3 h-3" />
+          أنت الآن في وضع التجربة (التخزين المحلي مفعل)
+        </div>
+      )}
+      
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 py-4 px-4 mb-8 sticky top-0 z-40 shadow-sm">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -188,13 +193,15 @@ const App: React.FC = () => {
               {user.photoURL ? (
                 <img src={user.photoURL} className="w-6 h-6 rounded-full shadow-sm" alt="avatar" />
               ) : (
-                <UserIcon className="w-4 h-4 text-slate-400" />
+                <div className="w-6 h-6 rounded-full bg-teal-100 flex items-center justify-center">
+                  <UserIcon className="w-3 h-3 text-teal-600" />
+                </div>
               )}
               <span className="text-[10px] font-black text-slate-600 hidden sm:inline truncate max-w-[80px]">
-                {user.displayName || 'مستخدم'}
+                {user.displayName || 'ضيف'}
               </span>
             </div>
-            <button onClick={logout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
+            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
@@ -285,8 +292,8 @@ const App: React.FC = () => {
               <div key={entry.id} className="animate-in fade-in slide-in-from-top-2 duration-300">
                 <EntryCard 
                   entry={{...entry, userName: entry.victimName} as any} 
-                  onDelete={entry.userId === user.uid ? () => deleteEntry(entry.id) : undefined}
-                  isAdmin={entry.userId === user.uid}
+                  onDelete={() => deleteEntry(entry.id)}
+                  isAdmin={true}
                 />
                 {entry.aiAnalysis && (
                   <div className="mt-2 mr-6 ml-4 p-4 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-start gap-3 border-dashed shadow-sm">
@@ -302,7 +309,7 @@ const App: React.FC = () => {
           
           {filteredEntries.length === 0 && !loading && (
             <div className="text-center py-20 bg-white/50 rounded-3xl border-2 border-dashed border-slate-200">
-               <p className="text-slate-400 font-bold italic">لا يوجد نتائج.. يبدو أن الجميع يتحدث ببراعة اليوم!</p>
+               <p className="text-slate-400 font-bold italic">الأرشيف فارغ.. يبدو أن الجميع فصحاء اليوم!</p>
             </div>
           )}
         </div>

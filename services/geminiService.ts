@@ -2,9 +2,8 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getApiKey = () => {
-  if (typeof process !== 'undefined' && process.env.API_KEY) return process.env.API_KEY;
-  if ((window as any).process?.env?.API_KEY) return (window as any).process.env.API_KEY;
-  return "";
+  // البحث عن المفتاح في كافة الأماكن الممكنة (Vite env أو Process env)
+  return (import.meta as any).env?.VITE_API_KEY || (process as any).env?.API_KEY || "";
 };
 
 export const analyzeKalja = async (name: string, content: string) => {

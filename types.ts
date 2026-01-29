@@ -2,15 +2,15 @@
 export type EntryCategory = 'slip' | 'joke';
 
 export interface SlipEntry {
-  id: string; // الوثيقة في Firestore
-  userId: string; // UID من Firebase Auth
-  userName: string;
-  content: string; // نص التعليق/الكلجة
+  id: string;
+  userId: string;
+  userEmail?: string;
+  userPhoto?: string;
+  victimName: string;
+  content: string;
   category: EntryCategory;
-  timestamp: any; // Firebase Timestamp
-  postId: string; // معرف الصفحة أو التصنيف
+  timestamp: number;
   aiAnalysis?: string;
-  isAnalyzing?: boolean;
 }
 
 export interface StatsData {
@@ -21,6 +21,4 @@ export interface StatsData {
 export interface AppConfig {
   appName: string;
   successMessage: string;
-  slipPrompt: string;
-  jokePrompt: string;
 }

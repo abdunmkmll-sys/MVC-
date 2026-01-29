@@ -1,17 +1,24 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { SlipEntry, StatsData, EntryCategory } from './types';
-import { auth, loginWithGoogle, logout, addEntry, deleteEntry, subscribeToEntries } from './services/firebaseService';
+import { 
+  isFirebaseConfigured, 
+  auth, 
+  loginWithGoogle, 
+  logout, 
+  addEntry, 
+  deleteEntry, 
+  subscribeToEntries 
+} from './services/firebaseService';
 import { analyzeKalja } from './services/geminiService';
 import EntryCard from './components/EntryCard';
 import SlipStats from './components/SlipStats';
 import { 
   Notebook, Search, LayoutGrid, 
-  LogOut, Sparkles, Send, User as UserIcon
+  LogOut, Sparkles, Send, User as UserIcon, AlertTriangle, Settings
 } from 'lucide-react';
 
 const App: React.FC = () => {
-  // تخزين بيانات المستخدم الأساسية فقط لتجنب تعقيدات الكائنات الدائرية الخاصة بـ Firebase
   const [user, setUser] = useState<{ uid: string; email: string | null; displayName: string | null; photoURL: string | null } | null>(null);
   const [entries, setEntries] = useState<SlipEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +29,11 @@ const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // مراقبة حالة المصادقة
+    if (!isFirebaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
     const unsubAuth = auth.onAuthStateChanged((u) => {
       if (u) {
         setUser({
@@ -37,7 +48,6 @@ const App: React.FC = () => {
       setLoading(false);
     });
     
-    // الاشتراك في تحديثات قاعدة البيانات
     const unsubEntries = subscribeToEntries((data) => {
       setEntries(data as SlipEntry[]);
     });
@@ -52,7 +62,7 @@ const App: React.FC = () => {
     try {
       await loginWithGoogle();
     } catch (e) {
-      // الخطأ يتم معالجته داخلياً في الخدمة
+      alert("خطأ في تسجيل الدخول. تأكد من إعدادات الـ Authorized Domains في Firebase.");
     }
   };
 
@@ -62,10 +72,8 @@ const App: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // تحليل الكلجة عبر الذكاء الاصطناعي
       const aiAnalysis = category === 'slip' ? await analyzeKalja(victimName, content) : undefined;
       
-      // إرسال البيانات (مع التأكد من أنها كائنات بسيطة فقط)
       await addEntry({
         userId: user.uid,
         userEmail: user.email,
@@ -80,8 +88,8 @@ const App: React.FC = () => {
       setVictimName('');
       setContent('');
     } catch (err) {
-      console.error("Submit error details:", err);
-      alert("تعذر الحفظ حالياً. قد يكون هناك مشكلة في الاتصال بالخادم.");
+      console.error("Submit error:", err);
+      alert("تعذر الحفظ. تحقق من اتصالك بالإنترنت.");
     } finally {
       setIsSubmitting(false);
     }
@@ -109,10 +117,40 @@ const App: React.FC = () => {
       .slice(0, 5);
   }, [entries]);
 
+  if (!isFirebaseConfigured && !loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-red-100 p-8 text-center">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-4">نقص في الإعدادات!</h2>
+          <p className="text-slate-500 mb-6 text-sm leading-relaxed">
+            لم يتم العثور على متغيرات البيئة (Environment Variables) الخاصة بـ Firebase. 
+            يرجى إضافتها في لوحة تحكم <b>Vercel</b> لكي يعمل الموقع بشكل صحيح.
+          </p>
+          <div className="bg-slate-50 p-4 rounded-xl text-right text-[11px] font-mono text-slate-400 space-y-1">
+            <p>FIREBASE_API_KEY</p>
+            <p>FIREBASE_PROJECT_ID</p>
+            <p>FIREBASE_AUTH_DOMAIN</p>
+          </div>
+          <a 
+            href="https://vercel.com/dashboard" 
+            target="_blank" 
+            className="mt-8 w-full py-3 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
+          >
+            <Settings className="w-4 h-4" />
+            انتقل إلى Vercel
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-      <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-4 font-bold text-slate-500">جاري الاتصال بالسحابة...</p>
+      <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+      <p className="mt-4 font-bold text-slate-400 text-sm">جاري التحقق من الأرشيف...</p>
     </div>
   );
 
@@ -140,19 +178,21 @@ const App: React.FC = () => {
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 py-4 px-4 mb-8 sticky top-0 z-40 shadow-sm">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-slate-900 p-2 rounded-xl">
+            <div className="bg-slate-900 p-2 rounded-xl shadow-md shadow-slate-200">
               <Notebook className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-black text-slate-900">أرشيف الكلجات</h1>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">أرشيف الكلجات</h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-slate-50 py-1 px-3 rounded-full border border-slate-100">
+            <div className="flex items-center gap-2 bg-slate-50 py-1.5 px-3 rounded-full border border-slate-100">
               {user.photoURL ? (
                 <img src={user.photoURL} className="w-6 h-6 rounded-full shadow-sm" alt="avatar" />
               ) : (
                 <UserIcon className="w-4 h-4 text-slate-400" />
               )}
-              <span className="text-[10px] font-bold text-slate-600 hidden sm:inline">{user.displayName || 'مستخدم'}</span>
+              <span className="text-[10px] font-black text-slate-600 hidden sm:inline truncate max-w-[80px]">
+                {user.displayName || 'مستخدم'}
+              </span>
             </div>
             <button onClick={logout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
               <LogOut className="w-5 h-5" />
@@ -163,16 +203,16 @@ const App: React.FC = () => {
 
       <main className="max-w-2xl mx-auto px-4">
         <section className="bg-white rounded-3xl shadow-sm p-6 mb-8 border border-slate-100 animate-in slide-in-from-bottom-4 duration-500">
-          <div className="flex gap-2 mb-6 bg-slate-50 p-1.5 rounded-2xl">
+          <div className="flex gap-2 mb-6 bg-slate-100/50 p-1.5 rounded-2xl">
             <button 
               onClick={() => setCategory('slip')} 
-              className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${category === 'slip' ? 'bg-white text-teal-600 shadow-md' : 'text-slate-400'}`}
+              className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${category === 'slip' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-400 hover:text-slate-500'}`}
             >
               كلجة 🙊
             </button>
             <button 
               onClick={() => setCategory('joke')} 
-              className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${category === 'joke' ? 'bg-white text-violet-600 shadow-md' : 'text-slate-400'}`}
+              className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${category === 'joke' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-400 hover:text-slate-500'}`}
             >
               ذبة 🔥
             </button>
@@ -180,74 +220,79 @@ const App: React.FC = () => {
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-2">اسم الضحية</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">اسم الضحية</label>
               <input 
                 type="text" 
                 value={victimName} 
                 onChange={(e) => setVictimName(e.target.value)} 
-                placeholder="من هو بطل الكلجة؟" 
-                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-50 transition-all"
+                placeholder="من هو بطل اللحظة؟" 
+                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-50 transition-all placeholder:text-slate-300"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-black text-slate-400 uppercase mb-2 mr-2">ماذا حدث؟</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">ماذا حدث؟</label>
               <textarea 
                 value={content} 
                 onChange={(e) => setContent(e.target.value)} 
                 placeholder={category === 'slip' ? "اكتب الخطأ النطقي حرفياً..." : "وثق الذبة التاريخية..."}
                 rows={2} 
-                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-50 transition-all resize-none"
+                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base outline-none focus:border-teal-300 focus:ring-4 focus:ring-teal-50 transition-all resize-none placeholder:text-slate-300"
                 required
               />
             </div>
             <button 
               type="submit" 
               disabled={isSubmitting}
-              className={`w-full py-4 rounded-2xl text-white font-black text-base flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 ${category === 'joke' ? 'bg-violet-600 shadow-violet-200' : 'bg-teal-600 shadow-teal-200'} shadow-lg`}
+              className={`w-full py-4 rounded-2xl text-white font-black text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 ${category === 'joke' ? 'bg-violet-600 shadow-violet-100' : 'bg-teal-600 shadow-teal-100'} shadow-lg`}
             >
-              {isSubmitting ? 'جاري التوثيق...' : (
+              {isSubmitting ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
                 <>
-                  <Send className="w-5 h-5" />
-                  توثيق اللحظة للأبد
+                  <Send className="w-4 h-4" />
+                  توثيق الآن
                 </>
               )}
             </button>
           </form>
         </section>
 
-        <div className="mb-8 relative group">
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-teal-500 transition-colors" />
+        <div className="mb-8 relative">
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5" />
           <input 
             type="text" 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
-            placeholder="ابحث في تاريخ الضحايا..." 
-            className="w-full bg-white border border-slate-100 rounded-2xl pr-12 pl-4 py-4 text-base outline-none focus:border-slate-300 shadow-sm transition-all" 
+            placeholder="ابحث في الأرشيف..." 
+            className="w-full bg-white border border-slate-100 rounded-2xl pr-12 pl-4 py-4 text-base outline-none focus:border-slate-300 shadow-sm transition-all shadow-slate-100" 
           />
         </div>
 
         <SlipStats data={statsData} />
 
         <div className="space-y-6">
-          <div className="flex items-center gap-2 mb-4">
-            <LayoutGrid className="w-4 h-4 text-slate-400" />
-            <h2 className="text-sm font-black text-slate-400 uppercase tracking-tight">الأرشيف الحي</h2>
+          <div className="flex items-center justify-between mb-4 px-2">
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="w-4 h-4 text-slate-400" />
+              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">الأرشيف الحي</h2>
+            </div>
+            <span className="text-[10px] font-bold text-slate-300">{filteredEntries.length} سجل</span>
           </div>
           
           <div className="grid gap-6">
             {filteredEntries.map(entry => (
-              <div key={entry.id} className="group relative animate-in fade-in slide-in-from-top-2 duration-300">
+              <div key={entry.id} className="animate-in fade-in slide-in-from-top-2 duration-300">
                 <EntryCard 
                   entry={{...entry, userName: entry.victimName} as any} 
                   onDelete={entry.userId === user.uid ? () => deleteEntry(entry.id) : undefined}
                   isAdmin={entry.userId === user.uid}
                 />
                 {entry.aiAnalysis && (
-                  <div className="mt-2 mr-6 ml-4 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2 border-dashed">
+                  <div className="mt-2 mr-6 ml-4 p-4 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-start gap-3 border-dashed shadow-sm">
                     <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 font-bold leading-relaxed">
-                      <span className="opacity-50">رأي الذكاء: </span> {entry.aiAnalysis}
+                    <p className="text-xs text-amber-900 font-bold leading-relaxed">
+                      {entry.aiAnalysis}
                     </p>
                   </div>
                 )}
@@ -257,7 +302,7 @@ const App: React.FC = () => {
           
           {filteredEntries.length === 0 && !loading && (
             <div className="text-center py-20 bg-white/50 rounded-3xl border-2 border-dashed border-slate-200">
-               <p className="text-slate-400 font-bold italic">لا يوجد نتائج.. الجميع يتحدث ببراعة اليوم!</p>
+               <p className="text-slate-400 font-bold italic">لا يوجد نتائج.. يبدو أن الجميع يتحدث ببراعة اليوم!</p>
             </div>
           )}
         </div>

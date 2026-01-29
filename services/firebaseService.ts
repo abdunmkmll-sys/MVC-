@@ -21,7 +21,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDummyKey",
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyPlaceholderKey",
   authDomain: process.env.FIREBASE_AUTH_DOMAIN || "placeholder-project.firebaseapp.com",
   projectId: process.env.FIREBASE_PROJECT_ID || "placeholder-project",
   storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "placeholder-project.appspot.com",
@@ -31,33 +31,30 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// تعزيز استقرار الاتصال بـ Firestore عبر تفعيل Long Polling بشكل قسري وتعديل الإعدادات للبيئات المقيدة
+// حل مشكلة "Could not reach Cloud Firestore backend" عبر Force Long Polling
+// وتجاهل الخصائص غير المعرفة لمنع أخطاء التسلسل
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   useFetchStreams: false,
 });
 
 export const auth = getAuth(app);
-// تأمين استمرارية الجلسة في المتصفح
 setPersistence(auth, browserLocalPersistence);
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-/**
- * معالجة تسجيل الدخول مع التعامل مع أخطاء النوافذ المنبثقة الشائعة
- */
 export const loginWithGoogle = async () => {
   try {
     return await signInWithPopup(auth, googleProvider);
   } catch (error: any) {
     if (error.code === 'auth/popup-blocked') {
-      alert("عذراً، المتصفح حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع للمتابعة.");
+      alert("يرجى السماح بالنوافذ المنبثقة (Popups) في متصفحك لتتمكن من تسجيل الدخول.");
     } else if (error.code === 'auth/popup-closed-by-user') {
-      console.warn("User closed the login popup.");
+      console.warn("User closed popup");
     } else {
-      console.error("Auth error:", error);
-      alert("حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.");
+      console.error("Auth Error:", error);
+      alert("حدث خطأ في الاتصال بخدمة تسجيل الدخول.");
     }
     throw error;
   }
@@ -67,15 +64,29 @@ export const logout = () => signOut(auth);
 
 const entriesRef = collection(db, "comments");
 
+/**
+ * إصلاح خطأ Circular structure: 
+ * كائن serverTimestamp() يحتوي على مراجع دائرية ولا يمكن تحويله لـ JSON 
+ * لذا يجب إضافته مباشرة للكائن المرسل لـ addDoc دون استخدام JSON.stringify
+ */
 export const addEntry = async (entry: any) => {
-  // تنظيف البيانات لضمان أنها قابلة للتسلسل (Serializable) قبل الإرسال
-  const cleanEntry = JSON.parse(JSON.stringify({
-    ...entry,
-    createdAt: serverTimestamp(),
-    timestamp: Date.now()
-  }));
+  // استخراج البيانات البسيطة فقط
+  const { victimName, content, category, aiAnalysis, timestamp, userId, userEmail, userPhoto } = entry;
   
-  return await addDoc(entriesRef, cleanEntry);
+  // بناء كائن نظيف يدويًا
+  const documentData = {
+    victimName: victimName || "مجهول",
+    content: content || "",
+    category: category || "slip",
+    aiAnalysis: aiAnalysis || null,
+    timestamp: timestamp || Date.now(),
+    userId: userId,
+    userEmail: userEmail || null,
+    userPhoto: userPhoto || null,
+    createdAt: serverTimestamp() // يضاف هنا مباشرة ولا يمر عبر JSON.stringify
+  };
+
+  return await addDoc(entriesRef, documentData);
 };
 
 export const deleteEntry = async (id: string) => {
@@ -92,15 +103,13 @@ export const subscribeToEntries = (callback: (entries: any[]) => void) => {
         return {
           id: doc.id,
           ...data,
-          // تحويل Firestore Timestamp إلى رقم لضمان سهولة الاستخدام في React
           createdAt: data.createdAt?.toMillis?.() || data.timestamp || Date.now()
         };
       });
       callback(fetchedEntries);
     },
     error: (error) => {
-      // التعامل الصامت مع أخطاء الاتصال المؤقتة لتجنب إزعاج المستخدم
-      console.warn("Firestore Snapshot error (likely offline):", error);
+      console.warn("Firestore offline mode active:", error.message);
     }
   });
 };

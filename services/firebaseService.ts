@@ -22,13 +22,16 @@ import {
   Auth
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
+// الحصول على المتغيرات بأمان
+const env = typeof process !== 'undefined' ? process.env : (window as any).process?.env || {};
+
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
+  apiKey: env.FIREBASE_API_KEY,
+  authDomain: env.FIREBASE_AUTH_DOMAIN,
+  projectId: env.FIREBASE_PROJECT_ID,
+  storageBucket: env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: env.FIREBASE_SENDER_ID,
+  appId: env.FIREBASE_APP_ID
 };
 
 // التحقق مما إذا كانت جميع الإعدادات المطلوبة موجودة
@@ -39,17 +42,21 @@ export const isFirebaseConfigured = !!(
 );
 
 let app;
-let db: Firestore;
-let auth: Auth;
+let db: any = null;
+let auth: any = null;
 
 if (isFirebaseConfigured) {
-  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-  db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-  });
-  auth = getAuth(app);
-  if (typeof window !== 'undefined') {
-    setPersistence(auth, browserLocalPersistence);
+  try {
+    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+    });
+    auth = getAuth(app);
+    if (typeof window !== 'undefined') {
+      setPersistence(auth, browserLocalPersistence);
+    }
+  } catch (error) {
+    console.error("Firebase initialization failed:", error);
   }
 }
 
@@ -58,7 +65,7 @@ export { db, auth };
 const googleProvider = new GoogleAuthProvider();
 
 export const loginWithGoogle = async () => {
-  if (!isFirebaseConfigured) throw new Error("Firebase not configured");
+  if (!isFirebaseConfigured || !auth) throw new Error("Firebase not configured");
   try {
     return await signInWithPopup(auth, googleProvider);
   } catch (error: any) {
@@ -67,10 +74,10 @@ export const loginWithGoogle = async () => {
   }
 };
 
-export const logout = () => isFirebaseConfigured && signOut(auth);
+export const logout = () => isFirebaseConfigured && auth && signOut(auth);
 
 export const addEntry = async (entry: any) => {
-  if (!isFirebaseConfigured) return;
+  if (!isFirebaseConfigured || !db) return;
   const entriesRef = collection(db, "comments");
   const documentData = {
     ...entry,
@@ -81,12 +88,12 @@ export const addEntry = async (entry: any) => {
 };
 
 export const deleteEntry = async (id: string) => {
-  if (!isFirebaseConfigured) return;
+  if (!isFirebaseConfigured || !db) return;
   return await deleteDoc(doc(db, "comments", id));
 };
 
 export const subscribeToEntries = (callback: (entries: any[]) => void) => {
-  if (!isFirebaseConfigured) {
+  if (!isFirebaseConfigured || !db) {
     callback([]);
     return () => {};
   }
